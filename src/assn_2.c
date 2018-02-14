@@ -68,7 +68,7 @@ int main(int argc,char* argv[]) {
 int binary_search_key(int key, int low, int high) {
 	int mid = (low + high)/2;
 	if(low <= high) {
-		if(prim[mid]->key == key)
+		if(prim[mid].key == key)
 			return mid;
 		else if(prim[mid] > key)
 			return binary_search_key(key, low, mid - 1);
@@ -105,8 +105,8 @@ void find_record(int key)
 long binary_search_offset(int key, int low, int high) {
 	int mid = (low + high)/2;
 	if(low <= high) {
-		if(prim[mid]->key == key)
-			return prim[mid]->off;
+		if(prim[mid].key == key)
+			return prim[mid].off;
 		else if(prim[mid] > key)
 			return binary_search_key(prim, key, low, mid - 1);
 		else
@@ -126,8 +126,8 @@ void delete_record(int key) {
 		fp = fopen(file_name, "r+b");
 		fseek(fp, offset, SEEK_SET);
 		fread(&record_size, 1, sizeof(int), fp);
-		available_list[available_list_end]->off = offset;
-		available_list[available_list_end]->size = record_size + sizeof(int);
+		available_list[available_list_end].off = offset;
+		available_list[available_list_end].size = record_size + sizeof(int);
 		available_list_end = available_list_end + 1;
 
 		if (which_order == worst_fit_label) {
@@ -140,8 +140,8 @@ void delete_record(int key) {
 		int j;
 		int key_index = binary_search_key(key, 0, prim_index_end);
 		for (j = key_index; j < prim_index_end; j++) {
-			prim[j]->key = prim[j + 1]->key;
-			prim[j]->off = prim[j + 1]->off;
+			prim[j].key = prim[j + 1].key;
+			prim[j].off = prim[j + 1].off;
 		}
 
 		prim_index_end = prim_index_end - 1;
@@ -256,24 +256,22 @@ void end_program()
 	fwrite(available_list, sizeof(avail_S), available_list_end, output_availability);
 	fclose(output_availability);
 
-
-	int i,j,hole_siz=0;
-
+	int i; //print index values
 	printf("Index:\n");
-
 	for(i = 0; i < prim_index_end; i++){
-		printf( "key=%d: offset=%ld\n", primary[i].key, primary[i].off );
+		printf( "key=%d: offset=%ld\n", prim[i].key, prim[i].off );
 	}
 
 	printf("Availability:\n");
-
-	for(i=0;i<available_end;i++){
-		printf( "size=%d: offset=%ld\n", available[i].siz, available[i].off );
-		hole_siz+=available[i].siz;
+	int hole_size = 0;
+	int j; //print availability list
+	for(j = 0; j < available_list_end; j++){
+		printf( "size=%d: offset=%ld\n", available_list[j].size, available_list[j].off );
+		hole_size = hole_size + available_list[j].size;
 	}
 
-	printf( "Number of holes: %d\n", available_end);
-	printf( "Hole space: %d\n", hole_siz );
+	printf( "Number of holes: %d\n", available_list_end);
+	printf( "Hole space: %d\n", hole_size);
 }
 
 
@@ -318,8 +316,8 @@ void add_key(int key, char *record) {
 		fwrite(record, record_size, 1, fp);
 		fclose(fp);
 
-		prim[prim_index_end]->key = key;
-		prim[prim_index_end]->off = new_offset;
+		prim[prim_index_end].key = key;
+		prim[prim_index_end].off = new_offset;
 		prim_index_end = prim_index_end + 1;
 		qsort(prim, prim_index_end, sizeof(index_S), comparator_index());
 	}
