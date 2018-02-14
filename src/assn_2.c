@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct avail_S {
 	int size; /* Hole's size */
@@ -23,34 +24,41 @@ typedef struct {
 } index_S;
 
 #define max_key_offset_pairs 10000 //Availability list will never need to store more than 10,000 size–offset pairs
+#define max_input_size 512
 #define worst_fit_label "--worst-fit"
 #define best_fit_label "--best-fit"
 #define first_fit_label "--first-fit"
+#define add_label "add"
+#define find_label "find"
+#define delete_label "del"
+#define end_program_label "end"
 
-index_S prim[500]; //index array
-avail_S available_list[500]; //available list
+index_S prim[max_key_offset_pairs]; //index array
+avail_S available_list[max_key_offset_pairs]; //available list
 int prim_index_end = 0;
 int available_list_end = 0;
 int available_list_size = -1;
 char *which_order;
 char *file_name;
 FILE *fp;
-
+FILE *output_index_file;
+FILE *output_availability_file;
 
 int comparator_index(const void *a, const void *b);
 int comparator_ascending(const void *a, const void *b);
 int comparator_descending(const void *a, const void *b);
-int binary_search_key(struct index_S *indexes[], int key, int low, int high);
-int worst_fit(struct avail_S *available_list, int *available_list_size, int record_size);
-int best_fit(struct avail_S *available_list, int *available_list_size, int record_size);
-int first_fit(struct avail_S *available_list, int *available_list_size, int record_size);
+int binary_search_key(int key, int low, int high);
+long binary_search_offset(int key, int low, int high);
+//int worst_fit(struct avail_S *available_list, int *available_list_size, int record_size);
+//int best_fit(struct avail_S *available_list, int *available_list_size, int record_size);
+//int first_fit(struct avail_S *available_list, int *available_list_size, int record_size);
+long available_offset_for_any_order(int record_size);
 void delete_record(int key);
 void find_record(int key);
-void add_key(int,char*);
+void add_record(int,char*);
+void end_program();
 
 int main(int argc,char* argv[]) {
-
-
     int available_list_size= -1;
     int index_list_size= -1;
 
@@ -58,9 +66,87 @@ int main(int argc,char* argv[]) {
 		printf("Illegal Number of Arguments");
 		exit(0);
 	}
+    if (strcmp(argv[1], "--worst-fit") == 0) {
+		which_order = worst_fit_label;
+	}
+    else if(strcmp(argv[1], "--best-fit") == 0) {
+		which_order = best_fit_label;
+	}
+    else if(strcmp(argv[1], "--first-fit") == 0) {
+		which_order = first_fit_label;
+	}
+    else {
+		printf("Illegal Order");
+		exit(0);
+	}
 
+    //student file file_name
+    file_name = argv[2];
 
+	if ((fp = fopen(file_name, "r+b")) != NULL) {
+		int index_end;
+		int availability_end;
+		output_availability_file = fopen("availability.bin", "rb");
+		if (output_availability_file) {
+			fseek(output_availability_file, 0, SEEK_END);
+			availability_end = ftell(output_availability_file);
+			fseek(output_availability_file, 0, SEEK_SET);
+			int i = 0;
+			while (ftell(output_availability_file) < availability_end) {
+				fread(&available_list[i], sizeof(struct avail_S), 1, output_availability_file);
+				i++;
+				available_list_size = available_list_size + 1;
+			}
+			fclose(output_availability_file);
+		}
+		output_index_file = fopen("index.bin", "rb");
+		if (output_index_file) {
+			fseek(output_index_file, 0, SEEK_END);
+			index_end = ftell(output_index_file);
+			fseek(output_index_file, 0, SEEK_SET);
+			//for(k=0;k<=index_list_size;k++)
+			int i = 0;
+			while (ftell(output_index_file) < index_end) {
+				fread(&prim[i], sizeof(index_S), 1, output_index_file);
+				i++;
+				index_list_size = index_list_size + 1;
+			}
+			fclose(output_index_file);
+		}
+	}
 
+	char *operation;
+	char *data;
+	int key;
+	char *tmp;
+	char task[256];
+
+	do {
+		fgets(task, 150, stdin);
+		tmp = strtok(task, " \n");
+		operation = tmp;
+
+		if (strcmp(operation, add_label) == 0) {
+			tmp = strtok(NULL, " ");
+			key = atoi(tmp);
+			tmp = strtok(NULL, " ");
+			data = tmp;
+			add_record(key, data);
+		} else if (strcmp(operation, delete_label) == 0) {
+			tmp = strtok(NULL, " ");
+			key = atoi(tmp);
+			delete_record(key);
+		} else if (strcmp(operation, find_label) == 0) {
+			tmp = strtok(NULL, " ");
+			key = atoi(tmp);
+			find_record(key);
+		} else if (strcmp(operation, end_program_label) == 0) {
+			end_program();
+			exit(0);
+		} else {
+			printf("Invalid Command Entered \n");
+		}
+	} while (1);
 }
 
 
@@ -70,7 +156,7 @@ int binary_search_key(int key, int low, int high) {
 	if(low <= high) {
 		if(prim[mid].key == key)
 			return mid;
-		else if(prim[mid] > key)
+		else if(prim[mid].key > key)
 			return binary_search_key(key, low, mid - 1);
 		else
 			return binary_search_key(key, mid + 1, high);
@@ -107,10 +193,10 @@ long binary_search_offset(int key, int low, int high) {
 	if(low <= high) {
 		if(prim[mid].key == key)
 			return prim[mid].off;
-		else if(prim[mid] > key)
-			return binary_search_key(prim, key, low, mid - 1);
+		else if(prim[mid].key > key)
+			return binary_search_offset(key, low, mid - 1);
 		else
-			return binary_search_key(prim, key, mid + 1, high);
+			return binary_search_offset(key, mid + 1, high);
 	}
 	return -1;
 }
@@ -131,10 +217,10 @@ void delete_record(int key) {
 		available_list_end = available_list_end + 1;
 
 		if (which_order == worst_fit_label) {
-			qsort(available_list, available_list_end, sizeof(avail_S), comparator_descending());
+			qsort(available_list, available_list_end, sizeof(avail_S), comparator_descending);
 		}
 		else if (which_order == best_fit_label) {
-			qsort(available_list, available_list_end, sizeof(avail_S), comparator_ascending());
+			qsort(available_list, available_list_end, sizeof(avail_S), comparator_ascending);
 		}
 
 		int j;
@@ -150,61 +236,87 @@ void delete_record(int key) {
 }
 
 
-int worst_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
-	int is_available = 0;
-	int i = 0;
-	for (i = 0; i <= *available_list_size; i++) {
-		if (available_list[i].size >= record_size) {
-			is_available = 1;
-			int hole_size = available_list[i].size - record_size;
-			if (hole_size > 0) {
-				(*available_list_size)++;
-				//Add hole size at the end
-				available_list[*available_list_size].size = hole_size;
-				available_list[*available_list_size].off = available_list[i].off + record_size;
-			}
-			//break from this loop as we found the space
-			break;
-		}
-	}
-
-	if (is_available == 0) {
-		return -1; //space not found
-	} else {
-		return i;
-	}
-}
-
-
-int best_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
-	int is_available = 0;
-	int i = 0;
-	for (i = 0; i <= *available_list_size; i++) {
-		if (available_list[i].size >= record_size) {
-			is_available = 1;
-			int hole_size = available_list[i].size - record_size;
-			if (hole_size > 0) { //append it to available list only if there is any space left
-				(*available_list_size)++;
-				//Add hole size at the end
-				available_list[*available_list_size].size = hole_size;
-				available_list[*available_list_size].off = available_list[i].off + record_size;
-			}
-			//break from this loop as we found the space
-			break;
-		}
-	}
-
-	if (is_available == 0) {
-		return -1; //space not found
-	} else {
-		return i;
-	}
-}
+//int worst_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
+//	int is_available = 0;
+//	int i = 0;
+//	for (i = 0; i <= *available_list_size; i++) {
+//		if (available_list[i].size >= record_size) {
+//			is_available = 1;
+//			int hole_size = available_list[i].size - record_size;
+//			if (hole_size > 0) {
+//				(*available_list_size)++;
+//				//Add hole size at the end
+//				available_list[*available_list_size].size = hole_size;
+//				available_list[*available_list_size].off = available_list[i].off + record_size;
+//			}
+//			//break from this loop as we found the space
+//			break;
+//		}
+//	}
+//
+//	if (is_available == 0) {
+//		return -1; //space not found
+//	} else {
+//		return i;
+//	}
+//}
 
 
-int first_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
+//int best_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
+//	int is_available = 0;
+//	int i = 0;
+//	for (i = 0; i <= *available_list_size; i++) {
+//		if (available_list[i].size >= record_size) {
+//			is_available = 1;
+//			int hole_size = available_list[i].size - record_size;
+//			if (hole_size > 0) { //append it to available list only if there is any space left
+//				(*available_list_size)++;
+//				//Add hole size at the end
+//				available_list[*available_list_size].size = hole_size;
+//				available_list[*available_list_size].off = available_list[i].off + record_size;
+//			}
+//			//break from this loop as we found the space
+//			break;
+//		}
+//	}
+//
+//	if (is_available == 0) {
+//		return -1; //space not found
+//	} else {
+//		return i;
+//	}
+//}
 
-}
+
+//int first_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
+//	int is_available = 0;
+//	int i = 0;
+//	for (i = 0; i <= *available_list_size; i++) {
+//		if (available_list[i].size >= record_size) {
+//			is_available = 1;
+//			int hole_size = available_list[i].size - record_size;
+//			if (hole_size > 0) {
+//				(*available_list_size)++;
+//				//Add hole size at the end
+//				available_list[*available_list_size].size = hole_size;
+//				available_list[*available_list_size].off = available_list[i].off + record_size;
+//			}
+//			//break from this loop as we found the space
+//			break;
+//		}
+//	}
+//
+//	if (is_available == 0) {
+//		return -1; //space not found
+//	} else {
+//		return i;
+//	}
+//}
+
+
+//int first_fit(struct avail_S *available_list, int *available_list_size, int record_size) {
+//
+//}
 
 
 int comparator_index(const void *a, const void *b)
@@ -275,7 +387,57 @@ void end_program()
 }
 
 
-void add_key(int key, char *record) {
+long available_offset_for_any_order(int record_size) {
+	int i, j;
+	for (i = 0; i < available_list_end; i++) {
+		if (available_list[i].size >= record_size) {
+			int size_difference = available_list[i].size - record_size - sizeof(int);
+			long offset_difference = available_list[i].off + record_size + sizeof(int);
+			long offset_location = available_list[i].off;
+
+			if ((which_order == best_fit_label || which_order == worst_fit_label) && size_difference > 0) {
+				available_list[i].size = size_difference;
+				available_list[i].off = offset_difference;
+				if (which_order == best_fit_label) {
+					qsort(available_list, i + 1, sizeof(avail_S), comparator_ascending);
+					return offset_location;
+				} else if (which_order == worst_fit_label) {
+					qsort(available_list, available_list_end, sizeof(avail_S), comparator_descending);
+					return offset_location;
+				}
+			}
+
+			else if (which_order == first_fit_label) {
+				for (j = i; j < available_list_end; j++) {
+					available_list[j].size = available_list[j + 1].size;
+					available_list[j].off = available_list[j + 1].off;
+				}
+
+				if (size_difference > 0) {
+					available_list[available_list_end - 1].size = size_difference;
+					available_list[available_list_end - 1].off = offset_difference;
+					return offset_location;
+				} else {
+					available_list_end = available_list_end - 1;
+					return offset_location;
+				}
+			}
+
+			if (size_difference == 0) {
+				for (j = i; j < available_list_end; j++) {
+					available_list[j].size = available_list[j + 1].size;
+					available_list[j].off = available_list[j + 1].off;
+				}
+				available_list_end -= 1;
+				return offset_location;
+			}
+		}
+	}
+	return -1;
+}
+
+
+void add_record(int key, char *record) {
 	int index_already_exist = binary_search_key(key, 0, prim_index_end);
 	if(index_already_exist != -1) {
 		printf("Record with SID=%d exists\n",key);
@@ -289,19 +451,8 @@ void add_key(int key, char *record) {
 			fp = fopen(file_name, "r+b");
 		}
 
-
-		int existing_offset;
 		int record_size = strlen(record) - 1;
-		if(which_order == best_fit_label) {
-			existing_offset = best_fit(available_list, available_list_size, record_size);
-		}
-		else if(which_order == worst_fit_label) {
-			existing_offset = worst_fit(available_list, available_list_size, record_size);
-		}
-		else if(which_order == first_fit_label) {
-			existing_offset = first_fit(available_list, available_list_size, record_size);
-		}
-
+		long existing_offset = available_offset_for_any_order(record_size);
 		int new_offset;
 		if (existing_offset != -1) {
 			fseek(fp, existing_offset, SEEK_SET);
@@ -319,7 +470,7 @@ void add_key(int key, char *record) {
 		prim[prim_index_end].key = key;
 		prim[prim_index_end].off = new_offset;
 		prim_index_end = prim_index_end + 1;
-		qsort(prim, prim_index_end, sizeof(index_S), comparator_index());
+		qsort(prim, prim_index_end, sizeof(index_S), comparator_index);
 	}
 
 }
